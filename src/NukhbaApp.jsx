@@ -354,11 +354,15 @@ function useNukhbaAuth() {
     return error ? { error: error.message } : {};
   };
 
-  const signUp = async (email, password, fullName, phone) => {
-    const { error } = await supabase.auth.signUp({
-      email, password, options: { data: { full_name: fullName, phone } },
+  const signUp = async (email, password, fullName) => {
+    const { data, error } = await supabase.auth.signUp({
+      email, password, options: { data: { full_name: fullName } },
     });
-    return error ? { error: error.message } : {};
+    if (error) return { error: error.message };
+    if (data?.user && !data?.session) {
+      return { success: true, needsConfirmation: true };
+    }
+    return { success: true };
   };
 
   const signOut = async () => { await supabase.auth.signOut(); };
@@ -520,22 +524,40 @@ function LoginPage({ auth, onBack }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [toast, setToast] = useState({});
 
+  const translateError = (msg) => {
+    if (!msg) return "حدث خطأ غير متوقع، حاول مرة أخرى";
+    const m = msg.toLowerCase();
+    if (m.includes("already registered") || m.includes("already exists") || m.includes("user already")) return "هذا البريد مسجّل مسبقاً، جرّب تسجيل الدخول";
+    if (m.includes("password") && m.includes("6")) return "كلمة المرور يجب أن تكون 6 أحرف على الأقل";
+    if (m.includes("invalid login") || m.includes("invalid email or password")) return "البريد أو كلمة المرور غير صحيحة";
+    if (m.includes("database error") || m.includes("error saving new user")) return "خطأ في قاعدة البيانات أثناء إنشاء الحساب — تأكد من تشغيل ملف schema.sql في Supabase بالكامل";
+    if (m.includes("email not confirmed")) return "يرجى تأكيد بريدك الإلكتروني أولاً عبر الرابط المرسل لك";
+    if (m.includes("rate limit")) return "محاولات كثيرة جداً، حاول بعد دقيقة";
+    return msg;
+  };
+
   const handle = async () => {
     if (!email || !password) return setToast({ msg: "يرجى إدخال البريد وكلمة المرور", type: "error" });
+    if (password.length < 6) return setToast({ msg: "كلمة المرور يجب أن تكون 6 أحرف على الأقل", type: "error" });
     setBusy(true);
     if (mode === "login") {
       const res = await auth.signIn(email, password);
-      if (res.error) setToast({ msg: res.error, type: "error" });
+      if (res.error) setToast({ msg: translateError(res.error), type: "error" });
     } else {
-      if (!fullName) { setBusy(false); return setToast({ msg: "يرجى إدخال الاسم الكامل", type: "error" }); }
-      const res = await auth.signUp(email, password, fullName, phone);
-      if (res.error) setToast({ msg: res.error, type: "error" });
-      else { setToast({ msg: "تم إنشاء الحساب! يمكنك تسجيل الدخول الآن", type: "success" }); setMode("login"); }
+      if (!fullName.trim()) { setBusy(false); return setToast({ msg: "يرجى إدخال الاسم الكامل", type: "error" }); }
+      const res = await auth.signUp(email, password, fullName.trim());
+      if (res.error) {
+        setToast({ msg: translateError(res.error), type: "error" });
+      } else if (res.needsConfirmation) {
+        setToast({ msg: "تم إنشاء الحساب! تحقق من بريدك الإلكتروني لتأكيد الحساب قبل الدخول", type: "success" });
+        setMode("login");
+      } else {
+        setToast({ msg: "تم إنشاء الحساب بنجاح!", type: "success" });
+      }
     }
     setBusy(false);
   };
@@ -591,7 +613,6 @@ function LoginPage({ auth, onBack }) {
 
           {mode === "register" && <Input label="الاسم الكامل" value={fullName} onChange={setFullName} placeholder="محمد أحمد" required icon={<User size={16} />} />}
           <Input label="البريد الإلكتروني" value={email} onChange={setEmail} type="email" placeholder="example@email.com" required icon={<Mail size={16} />} ltr />
-          {mode === "register" && <Input label="رقم الهاتف" value={phone} onChange={setPhone} placeholder="+964 780 000 0000" icon={<Phone size={16} />} />}
           <Input label="كلمة المرور" value={password} onChange={setPassword} type="password" placeholder="••••••••" required icon={<Lock size={16} />} ltr />
 
           <Btn onClick={handle} disabled={busy} style={{ width: "100%", marginTop: 8 }} size="lg">
