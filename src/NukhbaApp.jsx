@@ -344,18 +344,22 @@ function useNukhbaAuth() {
   const [authError, setAuthError] = useState(null);
 
   useEffect(() => {
-    // التقاط أي خطأ OAuth يرجع بالـ URL (Supabase يضيفه كـ query/hash params)
-    const url = new URL(window.location.href);
-    const errDesc = url.searchParams.get("error_description") || url.hash.match(/error_description=([^&]+)/)?.[1];
-    if (errDesc) {
-      setAuthError(decodeURIComponent(errDesc.replace(/\+/g, " ")));
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-
+    // التقاط session من الـ URL فوراً بعد رجوع Google
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) loadProfile(session.user.id);
-      else setLoading(false);
+      if (session) {
+        setSession(session);
+        loadProfile(session.user.id);
+      } else {
+        // لو ما في session، نحاول نقرأ من الـ hash (implicit flow)
+        supabase.auth.refreshSession().then(({ data }) => {
+          if (data?.session) {
+            setSession(data.session);
+            loadProfile(data.session.user.id);
+          } else {
+            setLoading(false);
+          }
+        });
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -363,6 +367,15 @@ function useNukhbaAuth() {
       if (session?.user) loadProfile(session.user.id);
       else { setProfile(null); setLoading(false); }
     });
+
+    // التقاط أخطاء OAuth من الـ URL
+    const url = new URL(window.location.href);
+    const errDesc = url.searchParams.get("error_description") ||
+      url.hash.match(/error_description=([^&]+)/)?.[1];
+    if (errDesc) {
+      setAuthError(decodeURIComponent(errDesc.replace(/\+/g, " ")));
+      window.history.replaceState({}, "", window.location.pathname);
+    }
 
     return () => subscription.unsubscribe();
   }, []);
