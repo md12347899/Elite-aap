@@ -8,7 +8,12 @@ import {
   Send, Download, Video as VideoIcon, Search, ShieldCheck, Clock3,
   Handshake, FileSpreadsheet, AlertTriangle, Compass, RefreshCw,
 } from "lucide-react";
-import { supabase, WHATSAPP_NUMBER, TRACKING_STEPS, siteOrigin } from "./supabaseClient";
+import { supabase, WHATSAPP_NUMBER, TRACKING_STEPS,
+  sha256, getLocalSession, saveLocalSession, clearLocalSession,
+  getUserById, getUserByEmail, getUserByAuthId,
+  createUser, createUserFromGoogle,
+  signInWithGoogle as googleOAuth, getGoogleSession, signOutGoogle,
+} from "./supabaseClient";
 
 /* =====================================================================
    نظام التصميم — "سجل الشحن" (Shipping Ledger)
@@ -331,108 +336,91 @@ function LiveMap({ lat = 25, lng = 55, originLat = 29.7604, originLng = -95.3698
   );
 }
 
+
 /* =====================================================================
-   مصادقة — مع إصلاح جذري لخطأ Google OAuth ("requested path is invalid")
-   السبب الشائع: redirectTo لازم يطابق رابط مسجّل بالضبط في
-   Supabase → Authentication → URL Configuration → Redirect URLs
-   هنا نستخدم origin الفعلي للموقع المنشور تلقائياً، ونمنع أي trailing slash مزدوج.
+   Auth Hook — نفس أسلوب Nexa (جدول مخصص + SHA-256 + localStorage)
    ===================================================================== */
 function useNukhbaAuth() {
-  const [session, setSession] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [authError, setAuthError] = useState(null);
+  const [googleSession, setGoogleSession] = useState(null); // لإكمال تسجيل Google
 
   useEffect(() => {
-    // التقاط session من الـ URL فوراً بعد رجوع Google
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setSession(session);
-        loadProfile(session.user.id);
-      } else {
-        // لو ما في session، نحاول نقرأ من الـ hash (implicit flow)
-        supabase.auth.refreshSession().then(({ data }) => {
-          if (data?.session) {
-            setSession(data.session);
-            loadProfile(data.session.user.id);
-          } else {
-            setLoading(false);
-          }
-        });
+    (async () => {
+      // 1) حاول استرجاع الجلسة المحفوظة محلياً
+      const localId = getLocalSession();
+      if (localId) {
+        const u = await getUserById(localId);
+        if (u) { setUser(u); setLoading(false); return; }
       }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session?.user) loadProfile(session.user.id);
-      else { setProfile(null); setLoading(false); }
-    });
-
-    // التقاط أخطاء OAuth من الـ URL
-    const url = new URL(window.location.href);
-    const errDesc = url.searchParams.get("error_description") ||
-      url.hash.match(/error_description=([^&]+)/)?.[1];
-    if (errDesc) {
-      setAuthError(decodeURIComponent(errDesc.replace(/\+/g, " ")));
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-
-    return () => subscription.unsubscribe();
+      // 2) تحقق من رجوع Google OAuth
+      const session = await getGoogleSession();
+      if (session?.user) {
+        const existing = await getUserByAuthId(session.user.id);
+        if (existing) {
+          saveLocalSession(existing.id);
+          setUser(existing);
+        } else {
+          // مستخدم Google جديد — يحتاج إكمال بيانات
+          setGoogleSession(session);
+        }
+      }
+      setLoading(false);
+    })();
   }, []);
 
-  const loadProfile = async (userId) => {
-    const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
-    if (!data && !error) {
-      // الـ trigger ما اشتغل (سيناريو نادر) — ننشئ profile يدوياً كحل احتياطي
-      const { data: userData } = await supabase.auth.getUser();
-      const meta = userData?.user?.user_metadata || {};
-      const { data: created } = await supabase
-        .from("profiles")
-        .insert({ id: userId, full_name: meta.full_name || userData?.user?.email?.split("@")[0] || "عميل", role: "client" })
-        .select()
-        .maybeSingle();
-      setProfile(created || null);
-    } else {
-      setProfile(data);
-    }
-    setLoading(false);
-  };
-
   const signIn = async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    return error ? { error: error.message } : {};
-  };
-
-  const signInWithGoogle = async () => {
-    // أهم سطر بكل ملف المصادقة: redirectTo يطابق origin الفعلي بدون أي مسار إضافي
-    const redirectTo = siteOrigin().replace(/\/+$/, "");
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo,
-        queryParams: { access_type: "offline", prompt: "consent" },
-      },
-    });
-    return error ? { error: error.message } : {};
+    const u = await getUserByEmail(email);
+    if (!u) return { error: "لا يوجد حساب بهذا البريد الإلكتروني" };
+    const hash = await sha256(password + "::nukhba::" + email.trim().toLowerCase());
+    if (hash !== u.passHash) return { error: "كلمة المرور غير صحيحة" };
+    saveLocalSession(u.id);
+    setUser(u);
+    return {};
   };
 
   const signUp = async (email, password, fullName) => {
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: {
-        data: { full_name: fullName },
-        emailRedirectTo: siteOrigin().replace(/\/+$/, ""),
-      },
-    });
-    if (error) return { error: error.message };
-    if (data?.user && !data?.session) return { success: true, needsConfirmation: true };
-    return { success: true };
+    const existing = await getUserByEmail(email);
+    if (existing) return { error: "هذا البريد مسجّل مسبقاً، جرّب تسجيل الدخول" };
+    const passHash = await sha256(password + "::nukhba::" + email.trim().toLowerCase());
+    const u = await createUser({ email, fullName, passHash, role: "client" });
+    if (!u) return { error: "تعذّر إنشاء الحساب، حاول مجدداً" };
+    saveLocalSession(u.id);
+    setUser(u);
+    return {};
   };
 
-  const signOut = async () => { await supabase.auth.signOut(); };
+  const completeGoogleSignup = async (fullName) => {
+    if (!googleSession) return;
+    const u = await createUserFromGoogle(
+      googleSession.user.id,
+      googleSession.user.email,
+      fullName || googleSession.user.user_metadata?.full_name || googleSession.user.email?.split("@")[0]
+    );
+    if (u) { saveLocalSession(u.id); setUser(u); setGoogleSession(null); }
+  };
 
-  return { session, profile, loading, authError, clearAuthError: () => setAuthError(null), signIn, signInWithGoogle, signUp, signOut };
+  const signOut = async () => {
+    clearLocalSession();
+    await signOutGoogle();
+    setUser(null);
+    setGoogleSession(null);
+  };
+
+  const startGoogle = async () => {
+    const ok = await googleOAuth();
+    if (!ok) return { error: "تعذّر بدء تسجيل الدخول بجوجل" };
+    return {};
+  };
+
+  return { user, loading, googleSession, setGoogleSession,
+    signIn, signUp, signOut, startGoogle, completeGoogleSignup,
+    // aliases للتوافق مع بقية الكود
+    session: user ? { user } : null,
+    profile: user,
+    authError: null,
+    clearAuthError: () => {},
+  };
 }
 
 /* =====================================================================
@@ -658,27 +646,24 @@ function LoginPage({ auth, onBack }) {
 
   const submit = async () => {
     if (!email.trim() || !pass) return setToast({ msg: "البريد وكلمة المرور مطلوبان", type: "error" });
-    if (pass.length < 6) return setToast({ msg: "كلمة المرور ٦ أحرف على الأقل", type: "error" });
+    if (pass.length < 4) return setToast({ msg: "كلمة المرور ٤ أحرف على الأقل", type: "error" });
     setBusy(true);
     if (mode === "login") {
       const r = await auth.signIn(email, pass);
-      if (r.error) setToast({ msg: xlateErr(r.error), type: "error" });
+      if (r.error) setToast({ msg: r.error, type: "error" });
     } else {
       if (!name.trim()) { setBusy(false); return setToast({ msg: "الاسم الكامل مطلوب", type: "error" }); }
       const r = await auth.signUp(email, pass, name.trim());
-      if (r.error) setToast({ msg: xlateErr(r.error), type: "error" });
-      else if (r.needsConfirmation) {
-        setToast({ msg: "✉ تم الإرسال! تحقق من بريدك وافتح رابط التأكيد، ثم ارجع هنا وسجّل دخولك", type: "success" });
-        setMode("login");
-      } else setToast({ msg: "تم إنشاء الحساب!", type: "success" });
+      if (r.error) setToast({ msg: r.error, type: "error" });
+      else setToast({ msg: "تم إنشاء الحساب بنجاح! 🎉", type: "success" });
     }
     setBusy(false);
   };
 
   const googleLogin = async () => {
     setGBusy(true);
-    const r = await auth.signInWithGoogle();
-    if (r.error) { setToast({ msg: xlateErr(r.error), type: "error" }); setGBusy(false); }
+    const r = await auth.startGoogle();
+    if (r.error) { setToast({ msg: r.error, type: "error" }); setGBusy(false); }
   };
 
   return (
@@ -774,16 +759,6 @@ function LoginPage({ auth, onBack }) {
               </>
             )}
           </div>
-
-          {/* تعليمات إعداد Google */}
-          <div style={{ marginTop: 28, background: `rgba(181,86,46,0.06)`, border: `1px solid rgba(181,86,46,0.18)`, borderRadius: 10, padding: "14px 16px" }}>
-            <p style={{ fontSize: 12, color: C.rust, fontWeight: 700, marginBottom: 6 }}>⚙ لتفعيل تسجيل الدخول بـ Google:</p>
-            <p style={{ fontSize: 11.5, color: C.inkSoft, lineHeight: 1.8, margin: 0 }}>
-              روح Supabase → Authentication → URL Configuration → أضف رابط موقعك بالضبط في <b>Redirect URLs</b>
-              (مثال: https://elite-aap.vercel.app)
-              ثم فعّل Google من Authentication → Providers
-            </p>
-          </div>
         </div>
       </div>
       <Toast msg={toast.msg} type={toast.type} onClose={() => setToast({})} />
@@ -859,7 +834,7 @@ function ClientDashboard({ auth }) {
     const { data } = await supabase
       .from("cars")
       .select("*, shipments(*), tracking_steps(*), car_images(*), car_videos(*), documents(*), notifications(*)")
-      .eq("client_id", auth.session.user.id)
+      .eq("client_id", auth.user.id)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -870,7 +845,7 @@ function ClientDashboard({ auth }) {
   return (
     <div style={{ minHeight: "100vh", background: C.paper, display: "flex", direction: "rtl", fontFamily: FONT_BODY }}>
       <style>{CSS_GLOBAL}</style>
-      <ClientSidebar tab={tab} setTab={setTab} profile={auth.profile} signOut={auth.signOut} />
+      <ClientSidebar tab={tab} setTab={setTab} profile={auth.user} signOut={auth.signOut} />
       <main style={{ flex: 1, marginRight: 230, padding: "28px 26px", overflowY: "auto", minWidth: 0 }}>
         {loading ? <Spinner label="جارٍ تحميل بياناتك..." /> : !car ? (
           <div style={{ textAlign: "center", padding: "80px 20px" }}>
@@ -883,7 +858,7 @@ function ClientDashboard({ auth }) {
           </div>
         ) : (
           <>
-            {tab === "home" && <CHome car={car} profile={auth.profile} />}
+            {tab === "home" && <CHome car={car} profile={auth.user} />}
             {tab === "tracking" && <CTracking car={car} />}
             {tab === "gallery" && <CGallery car={car} />}
             {tab === "docs" && <CDocs car={car} />}
@@ -1622,6 +1597,53 @@ function AImport({ setToast }) {
 }
 
 /* =====================================================================
+   شاشة إكمال تسجيل Google (مستخدم جديد يحتاج إدخال اسمه)
+   ===================================================================== */
+function GoogleCompleteScreen({ auth }) {
+  const [name, setName] = useState(auth.googleSession?.user?.user_metadata?.full_name || "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const finish = async () => {
+    if (!name.trim()) return setError("يرجى إدخال اسمك الكامل");
+    setBusy(true);
+    await auth.completeGoogleSignup(name.trim());
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.paper, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: FONT_BODY }}>
+      <style>{CSS_GLOBAL}</style>
+      <div style={{ width: "100%", maxWidth: 400 }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <Logo size="lg" />
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: C.navy, marginTop: 22, marginBottom: 6, fontFamily: FONT_DISPLAY }}>
+            خطوة أخيرة
+          </h2>
+          <p style={{ color: C.inkSoft, fontSize: 14 }}>
+            مرتبط بـ {auth.googleSession?.user?.email}
+          </p>
+        </div>
+        <Card style={{ padding: 30 }}>
+          <Field label="الاسم الكامل" value={name} onChange={setName} placeholder="محمد أحمد" required icon={<User size={16} />} />
+          {error && (
+            <div style={{ color: C.danger, fontSize: 13, marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}>
+              ⚠ {error}
+            </div>
+          )}
+          <Btn variant="rust" onClick={finish} disabled={busy} size="lg" style={{ width: "100%" }}>
+            {busy ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> جارٍ الإنشاء...</> : "إكمال إنشاء الحساب"}
+          </Btn>
+          <Btn variant="ghost" onClick={() => { auth.signOut(); }} style={{ width: "100%", marginTop: 10 }} size="sm">
+            إلغاء
+          </Btn>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* =====================================================================
    CSS عام + تطبيق الجذر
    ===================================================================== */
 const CSS_GLOBAL = `
@@ -1644,13 +1666,13 @@ export default function NukhbaApp() {
   const auth = useNukhbaAuth();
 
   useEffect(() => {
-    if (auth.session && auth.profile) {
-      if (auth.profile.role === "admin" || auth.profile.role === "employee") setPage("admin");
+    if (auth.user) {
+      if (auth.user.role === "admin" || auth.user.role === "employee") setPage("admin");
       else setPage("client");
-    } else if (!auth.loading && !auth.session) {
+    } else if (!auth.loading && !auth.user) {
       if (page === "client" || page === "admin") setPage("home");
     }
-  }, [auth.session, auth.profile, auth.loading]);
+  }, [auth.user, auth.loading]);
 
   if (auth.loading) return (
     <div style={{ minHeight:"100vh", background:C.paper, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:FONT_BODY }}>
@@ -1659,12 +1681,17 @@ export default function NukhbaApp() {
     </div>
   );
 
+  // شاشة إكمال تسجيل Google (مستخدم Google جديد)
+  if (auth.googleSession) {
+    return <GoogleCompleteScreen auth={auth} />;
+  }
+
   return (
     <>
       {page === "home" && <HomePage onGoLogin={() => setPage("login")} />}
       {page === "login" && <LoginPage auth={auth} onBack={() => setPage("home")} />}
-      {page === "client" && auth.session && <ClientDashboard auth={auth} />}
-      {page === "admin" && auth.session && <AdminDashboard auth={auth} />}
+      {page === "client" && auth.user && <ClientDashboard auth={auth} />}
+      {page === "admin" && auth.user && <AdminDashboard auth={auth} />}
     </>
   );
 }
