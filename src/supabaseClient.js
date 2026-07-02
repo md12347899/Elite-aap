@@ -9,23 +9,30 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    flowType: "pkce",
   },
 });
 
 // رقم واتساب الشركة
 export const WHATSAPP_NUMBER = "9647800000000";
 
-// خطوات تتبع الشحنة (11 مرحلة)
+// خطوات تتبع الشحنة (11 مرحلة) — تشبه ختم جمركي على وثيقة شحن
 export const TRACKING_STEPS = [
-  { num: 1, ar: "تم شراء السيارة", en: "Car Purchased", icon: "🏷️" },
-  { num: 2, ar: "تم إصدار الفاتورة", en: "Invoice Issued", icon: "📄" },
-  { num: 3, ar: "استلام من المزاد", en: "Received from Auction", icon: "🚗" },
-  { num: 4, ar: "ساحة التجميع", en: "Assembly Yard", icon: "🏭" },
-  { num: 5, ar: "تحميل الحاوية", en: "Container Loaded", icon: "📦" },
-  { num: 6, ar: "غادرت الميناء", en: "Departed Port", icon: "⚓" },
-  { num: 7, ar: "في عرض البحر", en: "In Transit", icon: "🌊" },
-  { num: 8, ar: "وصلت ميناء العراق", en: "Arrived Iraq Port", icon: "🏳️" },
-  { num: 9, ar: "التخليص الجمركي", en: "Customs Clearance", icon: "📋" },
-  { num: 10, ar: "جاهزة للاستلام", en: "Ready for Pickup", icon: "✅" },
-  { num: 11, ar: "تم التسليم", en: "Delivered", icon: "🎉" },
+  { num: 1, ar: "تم شراء السيارة", en: "Purchased", icon: "tag" },
+  { num: 2, ar: "تم إصدار الفاتورة", en: "Invoiced", icon: "receipt" },
+  { num: 3, ar: "استلام من المزاد", en: "Collected", icon: "gavel" },
+  { num: 4, ar: "ساحة التجميع", en: "Staging Yard", icon: "warehouse" },
+  { num: 5, ar: "تحميل الحاوية", en: "Containerized", icon: "package" },
+  { num: 6, ar: "غادرت الميناء", en: "Departed", icon: "anchor" },
+  { num: 7, ar: "في عرض البحر", en: "At Sea", icon: "waves" },
+  { num: 8, ar: "وصلت ميناء العراق", en: "Arrived Iraq", icon: "flag" },
+  { num: 9, ar: "التخليص الجمركي", en: "Customs", icon: "stamp" },
+  { num: 10, ar: "جاهزة للاستلام", en: "Ready", icon: "check-circle" },
+  { num: 11, ar: "تم التسليم", en: "Delivered", icon: "party-popper" },
 ];
+
+// رابط الموقع الفعلي الحالي (يُستخدم لردّ Google OAuth بدقة)
+export function siteOrigin() {
+  if (typeof window !== "undefined") return window.location.origin;
+  return "https://elite-aap.vercel.app";
+}
