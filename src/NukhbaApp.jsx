@@ -263,7 +263,9 @@ function Splash({onDone}) {
     <div style={{position:"fixed",inset:0,background:`radial-gradient(ellipse at 50% 35%,${T.bg} 0%,${T.bg3} 70%)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:F,direction:"rtl",zIndex:9999}}>
       <style>{CSS}</style>
       <div style={{animation:"gl 2s infinite"}}>
-        <div style={{width:100,height:100,borderRadius:24,background:`linear-gradient(135deg,${T.goldD},${T.gold})`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:GLOW,fontSize:50}}>🚢</div>
+        <div style={{width:100,height:100,borderRadius:24,background:`linear-gradient(135deg,${T.goldD},${T.gold})`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:GLOW}}>
+          <Ship size={50} color="#1B2B2C" strokeWidth={2}/>
+        </div>
       </div>
       <div style={{marginTop:26,textAlign:"center"}}>
         <div style={{fontSize:38,fontWeight:900,color:T.text,letterSpacing:"-0.02em"}}>النخبة</div>
@@ -386,11 +388,11 @@ function ClientApp({auth}) {
   };
 
   const TABS=[
-    {id:"home",  icon:"🏠",label:"الرئيسية"},
-    {id:"cars",  icon:"🚗",label:"سياراتي"},
-    {id:"track", icon:"🧭",label:"تتبع"},
-    {id:"photos",icon:"🖼️",label:"الصور"},
-    {id:"profile",icon:"👤",label:"ملفي"},
+    {id:"home",   Icon:Home,        label:"الرئيسية"},
+    {id:"cars",   Icon:Car,         label:"سياراتي"},
+    {id:"track",  Icon:Compass,     label:"تتبع"},
+    {id:"photos", Icon:ImgIcon,     label:"الصور"},
+    {id:"profile",Icon:User,        label:"ملفي"},
   ];
 
   const car=cars[0]||null;
@@ -441,11 +443,12 @@ function ClientApp({auth}) {
       <nav style={{position:"fixed",bottom:0,right:0,left:0,maxWidth:430,margin:"0 auto",background:`${T.bg}F8`,backdropFilter:"blur(20px)",borderTop:`1px solid ${T.border}`,display:"flex",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:"0 -4px 20px rgba(0,0,0,0.4)"}}>
         {TABS.map(t=>{
           const active=tab===t.id;
+          const Icon=t.Icon;
           return (
             <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"10px 4px 8px",border:"none",background:"transparent",cursor:"pointer",color:active?T.gold:T.text3,transition:"all 0.18s"}}>
-              <span style={{fontSize:22}}>{t.icon}</span>
+              <Icon size={22} strokeWidth={active?2.5:1.8}/>
               <span style={{fontSize:10,marginTop:4,fontWeight:active?700:400,fontFamily:F}}>{t.label}</span>
-              {active&&<div style={{width:4,height:4,borderRadius:"50%",background:T.gold,marginTop:3}}/>}
+              {active&&<div style={{width:20,height:2,borderRadius:1,background:T.gold,marginTop:3}}/>}
             </button>
           );
         })}
@@ -477,13 +480,13 @@ function HomeTab({car,cars,auth,setTab}) {
       {/* Stats Row */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:20}}>
         {[
-          [cars.length,"سيارات","🚗",T.gold],
-          [cars.filter(c=>c.current_status>=5&&c.current_status<=8).length,"قيد الشحن","🚢",T.green],
-          [cars.filter(c=>c.current_status===11).length,"تم التسليم","✅","#22C55E"],
-          [cars.reduce((a,c)=>a+(c.notifications?.filter(n=>!n.read).length||0),0),"إشعارات","🔔",T.orange],
-        ].map(([v,l,ic,c],i)=>(
+          [cars.length,"سيارات",Car,T.gold],
+          [cars.filter(c=>c.current_status>=5&&c.current_status<=8).length,"قيد الشحن",Ship,T.green],
+          [cars.filter(c=>c.current_status===11).length,"تم التسليم",CheckCircle2,"#22C55E"],
+          [cars.reduce((a,c)=>a+(c.notifications?.filter(n=>!n.read).length||0),0),"إشعارات",Bell,T.orange],
+        ].map(([v,l,Icon,c],i)=>(
           <Card key={i} s={{padding:"12px 6px",textAlign:"center"}}>
-            <div style={{fontSize:18,marginBottom:2}}>{ic}</div>
+            <Icon size={18} color={c} style={{margin:"0 auto 4px"}}/>
             <div style={{fontSize:21,fontWeight:800,color:c,lineHeight:1}}>{v}</div>
             <div style={{fontSize:10,color:T.text2,marginTop:3,lineHeight:1.3}}>{l}</div>
           </Card>
@@ -712,7 +715,9 @@ function VehicleDetail({car,onBack}) {
               <p style={{color:T.text2,fontSize:13,textAlign:"center",padding:"10px 0"}}>لا توجد مستندات</p>:
               (car.documents||[]).map((d,i)=>(
                 <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:i<car.documents.length-1?`1px solid ${T.border}`:"none"}}>
-                  <div style={{width:38,height:38,borderRadius:10,background:`${T.gold}18`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:18}}>📄</div>
+                  <div style={{width:38,height:38,borderRadius:10,background:`${T.gold}18`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <FileText size={18} color={T.gold}/>
+                  </div>
                   <div style={{flex:1}}>
                     <p style={{fontWeight:700,fontSize:13.5}}>{d.name_ar||d.name}</p>
                     <p style={{fontSize:11.5,color:T.text2}}>PDF{d.file_size?` · ${d.file_size}`:""}</p>
@@ -731,7 +736,7 @@ function VehicleDetail({car,onBack}) {
         {/* Shipment */}
         {car.shipments?.[0]&&(
           <Card s={{padding:16,marginBottom:14}}>
-            <p style={{fontSize:13,fontWeight:700,color:T.text2,marginBottom:12}}>🚢 معلومات الشحن</p>
+          <p style={{fontSize:13,fontWeight:700,color:T.text2,marginBottom:12,display:"flex",alignItems:"center",gap:6}}><Ship size={15} color={T.gold}/>معلومات الشحن</p>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
               {[
                 ["اسم السفينة",car.shipments[0].shipping_line],
@@ -964,7 +969,9 @@ function DocsTab({car,setTab}) {
       </div>
       {docs.length===0?<Empty icon={FileText} msg="لا توجد مستندات"/>:docs.map((d,i)=>(
         <Card key={i} s={{padding:"14px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:14}}>
-          <div style={{width:46,height:46,borderRadius:12,background:`${T.gold}18`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22}}>📄</div>
+          <div style={{width:46,height:46,borderRadius:12,background:`${T.gold}18`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <FileText size={22} color={T.gold}/>
+          </div>
           <div style={{flex:1}}>
             <p style={{fontWeight:700,fontSize:14.5,marginBottom:3}}>{d.name_ar||DL[d.doc_type]||d.name}</p>
             <p style={{fontSize:12,color:T.text2}}>PDF{d.file_size?` · ${d.file_size}`:""}</p>
@@ -995,7 +1002,9 @@ function NotifsTab({car,setTab}) {
       </div>
       {notifs.length===0?<Empty icon={Bell} msg="لا توجد إشعارات"/>:notifs.map((n,i)=>(
         <Card key={i} onClick={()=>!n.read&&mark(n.id)} s={{padding:"14px 16px",marginBottom:12,display:"flex",gap:12,cursor:"pointer",opacity:n.read?0.7:1}}>
-          <div style={{width:44,height:44,borderRadius:12,background:`${T.gold}15`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:20}}>🔔</div>
+          <div style={{width:44,height:44,borderRadius:12,background:`${T.gold}15`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <Bell size={20} color={T.gold}/>
+          </div>
           <div style={{flex:1}}>
             <p style={{fontWeight:n.read?500:700,fontSize:14.5,marginBottom:3}}>{n.title}</p>
             <p style={{fontSize:13,color:T.text2,marginBottom:4}}>{n.message}</p>
@@ -1034,7 +1043,9 @@ function ChatTab({car}) {
     <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 74px - 82px)"}} className="fu">
       {/* Header */}
       <div style={{padding:"14px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:12,background:T.bg}}>
-        <div style={{width:40,height:40,borderRadius:12,background:`${T.gold}20`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>💬</div>
+        <div style={{width:40,height:40,borderRadius:12,background:`${T.gold}20`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <MessageCircle size={20} color={T.gold}/>
+        </div>
         <div>
           <p style={{fontWeight:700,fontSize:15}}>الدردشة</p>
           <p style={{fontSize:11.5,color:T.green,display:"flex",alignItems:"center",gap:4}}>
@@ -1049,7 +1060,9 @@ function ChatTab({car}) {
         {msgs.map(m=>(
           <div key={m.id} style={{display:"flex",justifyContent:m.from==="user"?"flex-start":"flex-end"}}>
             {m.from==="support"&&(
-              <div style={{width:32,height:32,borderRadius:10,background:`${T.gold}20`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginLeft:8,fontSize:16}}>👨‍💼</div>
+              <div style={{width:32,height:32,borderRadius:10,background:`${T.gold}20`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginLeft:8}}>
+                <User size={16} color={T.gold}/>
+              </div>
             )}
             <div style={{
               maxWidth:"72%",
@@ -1083,13 +1096,12 @@ function ChatTab({car}) {
 /* ══════════════════ PROFILE TAB ══════════════════ */
 function ProfileTab({auth,setToast}) {
   const MENU=[
-    {icon:"👤",label:"البيانات الشخصية",color:T.gold},
-    {icon:"📍",label:"العناوين",color:T.green},
-    {icon:"🚗",label:"السيارات السابقة",color:T.gold},
-    {icon:"⭐",label:"تقييماتي",color:T.orange},
-    {icon:"⚙️",label:"الإعدادات",color:T.text2},
-    {icon:"💬",label:"تواصل معنا",color:"#25D366",fn:()=>window.open(`https://wa.me/${WA}`,"_blank")},
-    {icon:"🛡️",label:"الأمان والخصوصية",color:T.green},
+    {Icon:User,       label:"البيانات الشخصية",  color:T.gold},
+    {Icon:MapPin,     label:"العناوين",           color:T.green},
+    {Icon:Car,        label:"السيارات السابقة",   color:T.gold},
+    {Icon:Star,       label:"تقييماتي",           color:T.orange},
+    {Icon:Shield,     label:"الأمان والخصوصية",  color:T.green},
+    {Icon:MessageCircle,label:"تواصل معنا",       color:"#25D366",fn:()=>window.open(`https://wa.me/${WA}`,"_blank")},
   ];
   return (
     <div style={{padding:"20px 16px"}} className="fu">
@@ -1106,7 +1118,9 @@ function ProfileTab({auth,setToast}) {
       {/* Menu */}
       {MENU.map((item,i)=>(
         <Card key={i} onClick={item.fn||undefined} s={{padding:"14px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:14,cursor:"pointer"}}>
-          <div style={{width:42,height:42,borderRadius:12,background:`${item.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{item.icon}</div>
+          <div style={{width:42,height:42,borderRadius:12,background:`${item.color}18`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <item.Icon size={20} color={item.color}/>
+          </div>
           <span style={{flex:1,fontSize:15,fontWeight:600}}>{item.label}</span>
           <ChevronLeft size={18} color={T.text3}/>
         </Card>
@@ -1114,7 +1128,9 @@ function ProfileTab({auth,setToast}) {
 
       {/* Logout */}
       <Card onClick={auth.signOut} s={{padding:"14px 16px",marginTop:8,display:"flex",alignItems:"center",gap:14,cursor:"pointer",borderColor:`${T.red}30`}}>
-        <div style={{width:42,height:42,borderRadius:12,background:"rgba(239,68,68,0.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🚪</div>
+        <div style={{width:42,height:42,borderRadius:12,background:"rgba(239,68,68,0.1)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <LogOut size={20} color={T.red}/>
+        </div>
         <span style={{flex:1,fontSize:15,fontWeight:700,color:T.red}}>تسجيل الخروج</span>
       </Card>
     </div>
@@ -1126,11 +1142,11 @@ function AdminApp({auth}) {
   const [tab,setTab]=useState("overview");
   const [toast,setToast]=useState({});
   const TABS=[
-    {id:"overview",icon:"📊",label:"الرئيسية"},
-    {id:"orders",  icon:"🚗",label:"الطلبات"},
-    {id:"clients", icon:"👥",label:"العملاء"},
-    {id:"add",     icon:"➕",label:"إضافة"},
-    {id:"import",  icon:"📂",label:"Excel"},
+    {id:"overview",Icon:BarChart3, label:"الرئيسية"},
+    {id:"orders",  Icon:Car,       label:"الطلبات"},
+    {id:"clients", Icon:Users,     label:"العملاء"},
+    {id:"add",     Icon:Plus,      label:"إضافة"},
+    {id:"import",  Icon:Upload,    label:"Excel"},
   ];
   return (
     <div style={{maxWidth:430,margin:"0 auto",minHeight:"100vh",background:T.bg3,fontFamily:F,direction:"rtl"}}>
@@ -1152,11 +1168,12 @@ function AdminApp({auth}) {
       <nav style={{position:"fixed",bottom:0,right:0,left:0,maxWidth:430,margin:"0 auto",background:`${T.bg}F8`,backdropFilter:"blur(20px)",borderTop:`1px solid ${T.border}`,display:"flex",paddingBottom:"env(safe-area-inset-bottom)",boxShadow:"0 -4px 20px rgba(0,0,0,0.4)"}}>
         {TABS.map(t=>{
           const active=tab===t.id;
+          const Icon=t.Icon;
           return (
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"10px 4px 8px",border:"none",background:"transparent",cursor:"pointer",color:active?T.gold:T.text3}}>
-              <span style={{fontSize:21}}>{t.icon}</span>
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",padding:"10px 4px 8px",border:"none",background:"transparent",cursor:"pointer",color:active?T.gold:T.text3,transition:"all 0.18s"}}>
+              <Icon size={22} strokeWidth={active?2.5:1.8}/>
               <span style={{fontSize:10,marginTop:4,fontWeight:active?700:400,fontFamily:F}}>{t.label}</span>
-              {active&&<div style={{width:4,height:4,borderRadius:"50%",background:T.gold,marginTop:3}}/>}
+              {active&&<div style={{width:20,height:2,borderRadius:1,background:T.gold,marginTop:3}}/>}
             </button>
           );
         })}
@@ -1174,18 +1191,18 @@ function AdminOverview() {
     supabase.from("nukhba_users").select("id",{count:"exact"}).eq("role","client").then(({count})=>setCnt(count||0));
   },[]);
   const stats=[
-    [cars.length,"السيارات","🚗",T.gold],
-    [cnt,"العملاء","👥",T.green],
-    [cars.filter(c=>c.current_status>=5&&c.current_status<=8).length,"في الشحن","🌊",T.orange],
-    [cars.filter(c=>c.current_status===11).length,"مُسلَّمة","✅","#22C55E"],
+    [cars.length,"السيارات",Car,T.gold],
+    [cnt,"العملاء",Users,T.green],
+    [cars.filter(c=>c.current_status>=5&&c.current_status<=8).length,"في الشحن",Ship,T.orange],
+    [cars.filter(c=>c.current_status===11).length,"مُسلَّمة",CheckCircle2,"#22C55E"],
   ];
   return (
     <div style={{padding:"20px 16px"}} className="fu">
       <h2 style={{fontSize:22,fontWeight:800,marginBottom:18}}>لوحة التحكم</h2>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
-        {stats.map(([v,l,ic,c],i)=>(
+        {stats.map(([v,l,Icon,c],i)=>(
           <Card key={i} s={{padding:"18px 16px",textAlign:"center"}}>
-            <div style={{fontSize:28,marginBottom:4}}>{ic}</div>
+            <Icon size={26} color={c} style={{margin:"0 auto 8px"}}/>
             <div style={{fontSize:30,fontWeight:900,color:c}}>{v}</div>
             <div style={{fontSize:12,color:T.text2,marginTop:3}}>{l}</div>
           </Card>
@@ -1286,29 +1303,29 @@ function AdminActions({car,setToast}) {
 
   return (
     <div style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginTop:12}}>
-      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8}}>📍 تحديث الموقع</p>
+      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><MapPin size={13}/>تحديث الموقع</p>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
         <Field value={lat} onChange={setLat} placeholder="Lat" ltr/>
         <Field value={lng} onChange={setLng} placeholder="Lng" ltr/>
       </div>
       <Btn v="outline" sz="sm" onClick={saveLoc} s={{marginBottom:14}}>حفظ الموقع</Btn>
 
-      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8}}>📝 ملاحظة</p>
+      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><FileText size={13}/>ملاحظة</p>
       <Field value={note} onChange={setNote} placeholder="ملاحظة..."/>
       <Btn v="outline" sz="sm" onClick={saveNote} s={{marginBottom:14}}>حفظ</Btn>
 
-      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8}}>🖼️ رفع صورة</p>
+      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><ImgIcon size={13}/>رفع صورة</p>
       <SF value={stage} onChange={setStage} options={[["auction","المزاد"],["post_purchase","بعد الشراء"],["transit","النقل"],["port","الميناء"],["loading","التحميل"],["arrival","الوصول"]]}/>
       <input type="file" accept="image/*" disabled={upl} onChange={e=>{const f=e.target.files?.[0];if(f)upload("car-images",f,"car_images",{stage});}} style={{color:T.text,fontSize:13,display:"block",marginBottom:14}}/>
 
-      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8}}>🎬 رفع فيديو</p>
+      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><Video size={13}/>رفع فيديو</p>
       <input type="file" accept="video/*" disabled={upl} onChange={e=>{const f=e.target.files?.[0];if(f)upload("car-videos",f,"car_videos",{stage});}} style={{color:T.text,fontSize:13,display:"block",marginBottom:14}}/>
 
-      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8}}>📄 رفع مستند</p>
+      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><FileText size={13}/>رفع مستند</p>
       <Field value={docName} onChange={setDocName} placeholder="اسم المستند"/>
       <input type="file" accept=".pdf,.doc,.docx" disabled={upl||!docName} onChange={e=>{const f=e.target.files?.[0];if(f&&docName)upload("documents",f,"documents",{name:f.name,name_ar:docName,doc_type:"other",file_size:`${Math.round(f.size/1024)} KB`});}} style={{color:T.text,fontSize:13,display:"block",marginBottom:14}}/>
 
-      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8}}>🔔 إرسال إشعار</p>
+      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><Bell size={13}/>إرسال إشعار</p>
       <Field value={notifT} onChange={setNotifT} placeholder="العنوان"/>
       <Field value={notifM} onChange={setNotifM} placeholder="النص..."/>
       <Btn v="green" sz="sm" onClick={sendNotif} icon={<Send size={14}/>}>إرسال</Btn>
