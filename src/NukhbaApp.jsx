@@ -1409,10 +1409,21 @@ function AdminImport({setToast}) {
     const file=e.target.files?.[0];if(!file)return;
     const reader=new FileReader();
     reader.onload=ev=>{
-      const wb=XLSX.read(ev.target.result,{type:"binary"});
-      setRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""}));
+      try {
+        const data = new Uint8Array(ev.target.result);
+        const wb=XLSX.read(data,{type:"array"});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const parsed=XLSX.utils.sheet_to_json(ws,{defval:""});
+        console.log("parsed rows:", parsed.length, parsed[0]);
+        setRows(parsed);
+        if(parsed.length===0) setToast({msg:"الملف فارغ أو تنسيقه غير صحيح",type:"error"});
+        else setToast({msg:`تم قراءة ${parsed.length} سجل`,type:"success"});
+      } catch(err) {
+        console.error(err);
+        setToast({msg:"خطأ في قراءة الملف: "+err.message,type:"error"});
+      }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
   const importAll=async()=>{
     if(!cid||!rows.length) return setToast({msg:"اختر العميل والملف",type:"error"});
