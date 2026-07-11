@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import * as XLSX from "xlsx";
 import {
   Home, Car, Compass, FileText, Bell, User, LogOut, Plus,
@@ -7,6 +7,9 @@ import {
   BarChart3, Users, MoreVertical, Shield, Image as ImgIcon,
   Star, Heart, Share2, Camera, Video, Filter, Clock,
   CheckCircle2, AlertCircle, MapPin, Package, Anchor,
+  Edit3, Trash2, RefreshCw, Eye, ZoomIn, QrCode,
+  Phone, Globe, Info, PlusCircle, Maximize2, ArrowLeft,
+  TrendingUp, Activity, Zap, Navigation,
 } from "lucide-react";
 import {
   supabase, WA, STEPS, getUID, saveUID, clearUID, sha256,
@@ -1141,6 +1144,28 @@ function ProfileTab({auth,setToast}) {
 function AdminApp({auth}) {
   const [tab,setTab]=useState("overview");
   const [toast,setToast]=useState({});
+  const [clientView,setClientView]=useState(false);
+
+  // لو الأدمن اختار عرض العميل
+  if(clientView) return (
+    <div style={{position:"relative"}}>
+      <ClientApp auth={auth}/>
+      <button
+        onClick={()=>setClientView(false)}
+        style={{
+          position:"fixed", top:14, left:14, zIndex:9999,
+          background:`linear-gradient(135deg,${T.goldD},${T.gold})`,
+          border:"none", color:"#1B2B2C", borderRadius:12,
+          padding:"9px 16px", fontWeight:800, fontSize:13,
+          display:"flex", alignItems:"center", gap:6,
+          boxShadow:"0 4px 16px rgba(0,0,0,0.4)", fontFamily:F,
+          cursor:"pointer",
+        }}
+      >
+        <Shield size={15}/> عودة للأدمن
+      </button>
+    </div>
+  );
   const TABS=[
     {id:"overview",Icon:BarChart3, label:"الرئيسية"},
     {id:"orders",  Icon:Car,       label:"الطلبات"},
@@ -1154,8 +1179,13 @@ function AdminApp({auth}) {
       <div style={{position:"sticky",top:0,zIndex:50,background:`${T.bg3}F0`,backdropFilter:"blur(16px)",borderBottom:`1px solid ${T.border}`,padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <button onClick={auth.signOut} style={{background:T.card2,border:"none",color:T.text2,borderRadius:12,width:38,height:38,display:"flex",alignItems:"center",justifyContent:"center"}}><LogOut size={18}/></button>
         <Logo size={40}/>
-        <div style={{background:`${T.red}20`,border:`1px solid ${T.red}40`,borderRadius:10,padding:"5px 12px"}}>
-          <span style={{fontSize:11,color:T.red,fontWeight:700}}>ADMIN</span>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button onClick={()=>setClientView(true)} style={{background:`${T.gold}20`,border:`1px solid ${T.gold}40`,borderRadius:10,padding:"6px 12px",color:T.gold,fontSize:11.5,fontWeight:700,fontFamily:F,display:"flex",alignItems:"center",gap:5}}>
+            <Eye size={13}/>عرض عميل
+          </button>
+          <div style={{background:`${T.red}20`,border:`1px solid ${T.red}40`,borderRadius:10,padding:"5px 12px"}}>
+            <span style={{fontSize:11,color:T.red,fontWeight:700}}>ADMIN</span>
+          </div>
         </div>
       </div>
       <div style={{paddingBottom:82}}>
@@ -1228,18 +1258,42 @@ function AdminOverview() {
 function AdminOrders({setToast}) {
   const [cars,setCars]=useState([]);
   const [sel,setSel]=useState(null);
+  const [editCar,setEditCar]=useState(null);
+  const [search,setSearch]=useState("");
   useEffect(()=>{load();},[]);
   const load=()=>supabase.from("cars").select("*,shipments(*)").order("created_at",{ascending:false}).then(({data})=>data&&setCars(data));
-  const upStatus=async(id,status)=>{
+  const upStatus=async(id,status,carName,clientId)=>{
     await supabase.from("cars").update({current_status:status}).eq("id",id);
     await supabase.from("tracking_steps").update({completed:true,completed_at:new Date().toISOString()}).eq("car_id",id).eq("step_number",status);
+    const step=STEPS.find(s=>s.n===status);
+    if(step&&clientId){
+      await supabase.from("notifications").insert({client_id:clientId,car_id:id,title:`تحديث: ${carName}`,message:`وصلت سيارتك إلى مرحلة: ${step.ar}`,type:"update",read:false,created_at:new Date().toISOString()});
+    }
     setCars(c=>c.map(x=>x.id===id?{...x,current_status:status}:x));
-    setToast({msg:"تم تحديث الحالة ✓",type:"success"});
+    setToast({msg:"تم التحديث وإرسال إشعار تلقائي ✓",type:"success"});
   };
+  const deleteCar=async(id)=>{
+    if(!window.confirm("هل أنت متأكد من حذف هذه السيارة؟")) return;
+    for(const t of["tracking_steps","car_images","car_videos","documents","notifications","shipments"])
+      await supabase.from(t).delete().eq("car_id",id);
+    await supabase.from("cars").delete().eq("id",id);
+    setCars(c=>c.filter(x=>x.id!==id));
+    setToast({msg:"تم حذف السيارة ✓",type:"success"});
+  };
+  const filtered=cars.filter(c=>!search||c.car_name?.toLowerCase().includes(search.toLowerCase())||c.order_number?.toLowerCase().includes(search.toLowerCase()));
+  if(editCar) return <AdminEditCar car={editCar} onBack={()=>{setEditCar(null);load();}} setToast={setToast}/>;
   return (
     <div style={{padding:"20px 16px"}} className="fu">
-      <h2 style={{fontSize:22,fontWeight:800,marginBottom:16}}>إدارة الطلبات</h2>
-      {cars.map((c,i)=>(
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <h2 style={{fontSize:22,fontWeight:800}}>إدارة الطلبات</h2>
+        <span style={{fontSize:13,color:T.text2}}>{cars.length} سيارة</span>
+      </div>
+      <div style={{position:"relative",marginBottom:14}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="بحث..."
+          style={{width:"100%",background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"11px 16px 11px 40px",color:T.text,fontSize:14,fontFamily:F}}/>
+        <Search size={16} color={T.text3} style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)"}}/>
+      </div>
+      {filtered.map((c,i)=>(
         <Card key={i} s={{padding:"14px 16px",marginBottom:12}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
             <div style={{width:46,height:40,borderRadius:10,overflow:"hidden",flexShrink:0,background:T.card2}}>
@@ -1249,17 +1303,79 @@ function AdminOrders({setToast}) {
               <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.car_name}</p>
               <p style={{fontSize:11.5,color:T.gold}}>{c.order_number}</p>
             </div>
-            <button onClick={()=>setSel(sel===c.id?null:c.id)} style={{background:T.card2,border:"none",color:T.text2,borderRadius:10,width:34,height:34,display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <MoreVertical size={16}/>
-            </button>
+            <div style={{display:"flex",gap:5}}>
+              <button onClick={()=>setEditCar(c)} style={{background:`${T.gold}20`,border:"none",color:T.gold,borderRadius:9,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <Edit3 size={13}/>
+              </button>
+              <button onClick={()=>deleteCar(c.id)} style={{background:"rgba(239,68,68,0.1)",border:"none",color:T.red,borderRadius:9,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <Trash2 size={13}/>
+              </button>
+              <button onClick={()=>setSel(sel===c.id?null:c.id)} style={{background:T.card2,border:"none",color:T.text2,borderRadius:9,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <MoreVertical size={13}/>
+              </button>
+            </div>
           </div>
-          <select value={c.current_status} onChange={e=>upStatus(c.id,parseInt(e.target.value))}
+          <div style={{marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+              <span style={{fontSize:11,color:T.text2}}>{STEPS[c.current_status-1]?.ar}</span>
+              <span style={{fontSize:11,color:T.gold,fontWeight:700}}>{Math.round((c.current_status/11)*100)}%</span>
+            </div>
+            <PBar value={c.current_status}/>
+          </div>
+          <select value={c.current_status} onChange={e=>upStatus(c.id,parseInt(e.target.value),c.car_name,c.client_id)}
             style={{width:"100%",background:T.card2,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",color:T.text,fontSize:14,fontFamily:F}}>
-            {STEPS.map(s=><option key={s.n} value={s.n}>{s.icon} {s.ar}</option>)}
+            {STEPS.map(s=><option key={s.n} value={s.n}>{s.ar}</option>)}
           </select>
           {sel===c.id&&<AdminActions car={c} setToast={setToast}/>}
         </Card>
       ))}
+    </div>
+  );
+}
+
+function AdminEditCar({car,onBack,setToast}) {
+  const [f,setF]=useState({
+    car_name:car.car_name||"", model:car.model||"", year:car.year?.toString()||"",
+    color:car.color||"", vin:car.vin||"", engine:car.engine||"",
+    drive_type:car.drive_type||"", transmission:car.transmission||"",
+    mileage:car.mileage||"", order_number:car.order_number||"",
+    purchase_date:car.purchase_date||"", estimated_arrival:car.estimated_arrival||"",
+    main_image_url:car.main_image_url||"",
+  });
+  const [busy,setBusy]=useState(false);
+  const sf=(k,v)=>setF(p=>({...p,[k]:v}));
+  const save=async()=>{
+    setBusy(true);
+    const{error}=await supabase.from("cars").update({...f,year:parseInt(f.year)||null}).eq("id",car.id);
+    if(error) setToast({msg:error.message,type:"error"});
+    else { setToast({msg:"تم حفظ التعديلات ✓",type:"success"}); onBack(); }
+    setBusy(false);
+  };
+  return (
+    <div style={{padding:"20px 16px"}} className="fu">
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={onBack} style={{background:T.card2,border:"none",color:T.text2,borderRadius:12,width:36,height:36,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <ChevronRight size={18}/>
+        </button>
+        <h2 style={{fontSize:20,fontWeight:800}}>تعديل السيارة</h2>
+      </div>
+      <Field label="اسم السيارة" value={f.car_name} onChange={v=>sf("car_name",v)} placeholder="Toyota Land Cruiser"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <Field label="الموديل" value={f.model} onChange={v=>sf("model",v)} placeholder="LC300"/>
+        <Field label="السنة" value={f.year} onChange={v=>sf("year",v)} placeholder="2022"/>
+        <Field label="اللون" value={f.color} onChange={v=>sf("color",v)} placeholder="أبيض"/>
+        <Field label="VIN" value={f.vin} onChange={v=>sf("vin",v)} placeholder="JTMCY7..." ltr/>
+        <Field label="المحرك" value={f.engine} onChange={v=>sf("engine",v)} placeholder="3.5L"/>
+        <Field label="الدفع" value={f.drive_type} onChange={v=>sf("drive_type",v)} placeholder="4WD"/>
+        <Field label="ناقل الحركة" value={f.transmission} onChange={v=>sf("transmission",v)} placeholder="أوتوماتيك"/>
+        <Field label="المسافة" value={f.mileage} onChange={v=>sf("mileage",v)} placeholder="12,000"/>
+      </div>
+      <Field label="رابط الصورة الرئيسية" value={f.main_image_url} onChange={v=>sf("main_image_url",v)} placeholder="https://..." ltr/>
+      <Field label="تاريخ الشراء" value={f.purchase_date} onChange={v=>sf("purchase_date",v)} type="date" ltr/>
+      <Field label="الوصول المتوقع" value={f.estimated_arrival} onChange={v=>sf("estimated_arrival",v)} type="date" ltr/>
+      <Btn onClick={save} disabled={busy} full sz="lg" icon={<Check size={18}/>} s={{marginTop:8}}>
+        {busy?<Sp s={18} c="#1B2B2C"/>:"حفظ التعديلات"}
+      </Btn>
     </div>
   );
 }
@@ -1336,24 +1452,76 @@ function AdminActions({car,setToast}) {
 
 function AdminClients() {
   const [clients,setClients]=useState([]);
+  const [sel,setSel]=useState(null);
+  const [notifT,setNotifT]=useState("");
+  const [notifM,setNotifM]=useState("");
+  const [toast,setToast]=useState({});
+
   useEffect(()=>{
-    supabase.from("nukhba_users").select("*,cars(id)").eq("role","client").order("created_at",{ascending:false}).then(({data})=>data&&setClients(data));
+    supabase.from("nukhba_users").select("*,cars(id,car_name,current_status)").eq("role","client").order("created_at",{ascending:false}).then(({data})=>data&&setClients(data));
   },[]);
+
+  const sendNotif=async(clientId,clientName)=>{
+    if(!notifT||!notifM) return setToast({msg:"أدخل العنوان والنص",type:"error"});
+    await supabase.from("notifications").insert({client_id:clientId,title:notifT,message:notifM,type:"info",read:false,created_at:new Date().toISOString()});
+    setToast({msg:`تم إرسال إشعار لـ ${clientName} ✓`,type:"success"});
+    setNotifT("");setNotifM("");setSel(null);
+  };
+
+  const broadcast=async()=>{
+    if(!notifT||!notifM) return setToast({msg:"أدخل العنوان والنص",type:"error"});
+    for(const c of clients){
+      await supabase.from("notifications").insert({client_id:c.id,title:notifT,message:notifM,type:"info",read:false,created_at:new Date().toISOString()});
+    }
+    setToast({msg:`تم إرسال إشعار لكل العملاء (${clients.length}) ✓`,type:"success"});
+    setNotifT("");setNotifM("");
+  };
+
   return (
     <div style={{padding:"20px 16px"}} className="fu">
-      <h2 style={{fontSize:22,fontWeight:800,marginBottom:16}}>العملاء</h2>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <h2 style={{fontSize:22,fontWeight:800}}>العملاء</h2>
+        <Badge color={T.gold}>{clients.length} عميل</Badge>
+      </div>
+
+      {/* Broadcast */}
+      <Card s={{padding:16,marginBottom:16}}>
+        <p style={{fontSize:13,fontWeight:700,color:T.gold,marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+          <Bell size={14}/>إشعار لكل العملاء
+        </p>
+        <Field value={notifT} onChange={setNotifT} placeholder="العنوان"/>
+        <Field value={notifM} onChange={setNotifM} placeholder="النص..."/>
+        <Btn v="green" sz="sm" onClick={broadcast} full icon={<Send size={14}/>}>إرسال للكل</Btn>
+      </Card>
+
       {clients.map((c,i)=>(
-        <Card key={i} s={{padding:"14px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:42,height:42,borderRadius:"50%",background:`linear-gradient(135deg,${T.goldD},${T.gold})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:"#1B2B2C",flexShrink:0}}>
-            {(c.full_name||"؟")[0]}
+        <Card key={i} s={{padding:"14px 16px",marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:sel===c.id?12:0}}>
+            <div style={{width:42,height:42,borderRadius:"50%",background:`linear-gradient(135deg,${T.goldD},${T.gold})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:"#1B2B2C",flexShrink:0}}>
+              {(c.full_name||"؟")[0]}
+            </div>
+            <div style={{flex:1}}>
+              <p style={{fontWeight:700,fontSize:14.5}}>{c.full_name}</p>
+              <p style={{fontSize:12,color:T.text2}}>{c.email}</p>
+            </div>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <Badge color={T.gold}>{c.cars?.length||0} سيارة</Badge>
+              <button onClick={()=>setSel(sel===c.id?null:c.id)} style={{background:T.card2,border:"none",color:T.text2,borderRadius:9,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <Bell size={13}/>
+              </button>
+            </div>
           </div>
-          <div style={{flex:1}}>
-            <p style={{fontWeight:700,fontSize:14.5}}>{c.full_name}</p>
-            <p style={{fontSize:12,color:T.text2}}>{c.email}</p>
-          </div>
-          <Badge color={T.gold}>{c.cars?.length||0} سيارة</Badge>
+          {sel===c.id&&(
+            <div style={{borderTop:`1px solid ${T.border}`,paddingTop:12}}>
+              <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8}}>إرسال إشعار خاص</p>
+              <Field value={notifT} onChange={setNotifT} placeholder="العنوان"/>
+              <Field value={notifM} onChange={setNotifM} placeholder="النص..."/>
+              <Btn v="green" sz="sm" onClick={()=>sendNotif(c.id,c.full_name)} icon={<Send size={13}/>}>إرسال</Btn>
+            </div>
+          )}
         </Card>
       ))}
+      <Toast msg={toast.msg} type={toast.type} onClose={()=>setToast({})}/>
     </div>
   );
 }
