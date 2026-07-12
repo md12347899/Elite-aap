@@ -7,7 +7,8 @@ export const supabase = createClient(URL, ANON, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "implicit" }
 });
 
-export const WA = "9647800000000";
+export const WA  = "9647709941070";
+export const WA2 = "9647731984510";
 
 export const STEPS = [
   { n:1,  ar:"تم الشراء",          en:"Purchased",         icon:"🏷" },
