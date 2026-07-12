@@ -12,7 +12,7 @@ import {
   TrendingUp, Activity, Zap, Navigation,
 } from "lucide-react";
 import {
-  supabase, WA, STEPS, getUID, saveUID, clearUID, sha256,
+  supabase, WA, WA2, STEPS, getUID, saveUID, clearUID, sha256,
   dbGetById, dbGetByEmail, dbGetByAuth, dbCreateUser, dbCreateFromGoogle,
   googleSignIn, googleSignOut, googleGetSession,
 } from "./supabaseClient";
@@ -65,6 +65,23 @@ button{font-family:${F};cursor:pointer;}
 /* ══════════════════ PRIMITIVES ══════════════════ */
 const Sp = ({s=22,c=T.gold}) =>
   <Loader2 size={s} color={c} style={{animation:"spin 0.8s linear infinite"}}/>;
+
+function OfflineBar() {
+  const [offline,setOffline]=useState(!navigator.onLine);
+  useEffect(()=>{
+    const on=()=>setOffline(false);
+    const off=()=>setOffline(true);
+    window.addEventListener("online",on);
+    window.addEventListener("offline",off);
+    return()=>{window.removeEventListener("online",on);window.removeEventListener("offline",off);};
+  },[]);
+  if(!offline) return null;
+  return (
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:9999,background:T.red,padding:"10px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:13,fontWeight:700,color:"#fff"}}>
+      لا يوجد اتصال بالإنترنت
+    </div>
+  );
+}
 
 function Logo({size=44}) {
   return (
@@ -1129,6 +1146,35 @@ function ProfileTab({auth,setToast}) {
         </Card>
       ))}
 
+      {/* أزرار واتساب */}
+      <div style={{marginBottom:10}}>
+        <p style={{fontSize:12.5,color:T.text2,marginBottom:10,fontWeight:600}}>تواصل معنا عبر واتساب</p>
+        <a href={`https://wa.me/${WA}`} target="_blank" rel="noopener noreferrer" style={{textDecoration:"none",display:"block",marginBottom:10}}>
+          <Card s={{padding:"14px 16px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",borderColor:"rgba(37,211,102,0.3)"}}>
+            <div style={{width:42,height:42,borderRadius:12,background:"rgba(37,211,102,0.1)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <MessageCircle size={20} color="#25D366"/>
+            </div>
+            <div style={{flex:1}}>
+              <p style={{fontSize:13,fontWeight:700,color:T.text}}>واتساب 1</p>
+              <p style={{fontSize:12,color:T.text2}}>+964 770 994 1070</p>
+            </div>
+            <ChevronLeft size={18} color={T.text3}/>
+          </Card>
+        </a>
+        <a href={`https://wa.me/${WA2}`} target="_blank" rel="noopener noreferrer" style={{textDecoration:"none",display:"block"}}>
+          <Card s={{padding:"14px 16px",display:"flex",alignItems:"center",gap:14,cursor:"pointer",borderColor:"rgba(37,211,102,0.3)"}}>
+            <div style={{width:42,height:42,borderRadius:12,background:"rgba(37,211,102,0.1)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <MessageCircle size={20} color="#25D366"/>
+            </div>
+            <div style={{flex:1}}>
+              <p style={{fontSize:13,fontWeight:700,color:T.text}}>واتساب 2</p>
+              <p style={{fontSize:12,color:T.text2}}>+964 773 198 4510</p>
+            </div>
+            <ChevronLeft size={18} color={T.text3}/>
+          </Card>
+        </a>
+      </div>
+
       {/* Logout */}
       <Card onClick={auth.signOut} s={{padding:"14px 16px",marginTop:8,display:"flex",alignItems:"center",gap:14,cursor:"pointer",borderColor:`${T.red}30`}}>
         <div style={{width:42,height:42,borderRadius:12,background:"rgba(239,68,68,0.1)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
@@ -1189,9 +1235,9 @@ function AdminApp({auth}) {
         </div>
       </div>
       <div style={{paddingBottom:82}}>
-        {tab==="overview"&&<AdminOverview/>}
+        {tab==="overview"&&<AdminOverview setToast={setToast}/>}
         {tab==="orders"  &&<AdminOrders  setToast={setToast}/>}
-        {tab==="clients" &&<AdminClients/>}
+        {tab==="clients" &&<AdminClients setToast={setToast}/>}
         {tab==="add"     &&<AdminAddCar  setToast={setToast}/>}
         {tab==="import"  &&<AdminImport  setToast={setToast}/>}
       </div>
@@ -1213,44 +1259,105 @@ function AdminApp({auth}) {
   );
 }
 
-function AdminOverview() {
+function AdminOverview({setToast}) {
   const [cars,setCars]=useState([]);
   const [cnt,setCnt]=useState(0);
-  useEffect(()=>{
-    supabase.from("cars").select("*").order("created_at",{ascending:false}).limit(20).then(({data})=>data&&setCars(data));
-    supabase.from("nukhba_users").select("id",{count:"exact"}).eq("role","client").then(({count})=>setCnt(count||0));
+  const [loading,setLoading]=useState(true);
+
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const[{data},{count}]=await Promise.all([
+      supabase.from("cars").select("*").order("created_at",{ascending:false}).limit(20),
+      supabase.from("nukhba_users").select("id",{count:"exact",head:true}).eq("role","client"),
+    ]);
+    if(data) setCars(data);
+    setCnt(count||0);
+    setLoading(false);
   },[]);
+
+  useEffect(()=>{load();},[load]);
+
+  const exportExcel=async()=>{
+    const{data}=await supabase.from("cars").select("order_number,car_name,model,year,color,vin,current_status,purchase_date,estimated_arrival,client_id");
+    if(!data?.length) return setToast({msg:"لا توجد بيانات للتصدير",type:"error"});
+    const ws=XLSX.utils.json_to_sheet(data.map(c=>({
+      "رقم الطلب":c.order_number,"اسم السيارة":c.car_name,"الموديل":c.model,
+      "السنة":c.year,"اللون":c.color,"VIN":c.vin,
+      "الحالة":STEPS[c.current_status-1]?.ar,"تاريخ الشراء":c.purchase_date,"الوصول المتوقع":c.estimated_arrival,
+    })));
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"سيارات");
+    XLSX.writeFile(wb,`elite-export-${new Date().toISOString().slice(0,10)}.xlsx`);
+    setToast({msg:"تم تصدير البيانات ✓",type:"success"});
+  };
+
   const stats=[
     [cars.length,"السيارات",Car,T.gold],
     [cnt,"العملاء",Users,T.green],
     [cars.filter(c=>c.current_status>=5&&c.current_status<=8).length,"في الشحن",Ship,T.orange],
     [cars.filter(c=>c.current_status===11).length,"مُسلَّمة",CheckCircle2,"#22C55E"],
   ];
+
   return (
     <div style={{padding:"20px 16px"}} className="fu">
-      <h2 style={{fontSize:22,fontWeight:800,marginBottom:18}}>لوحة التحكم</h2>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
-        {stats.map(([v,l,Icon,c],i)=>(
-          <Card key={i} s={{padding:"18px 16px",textAlign:"center"}}>
-            <Icon size={26} color={c} style={{margin:"0 auto 8px"}}/>
-            <div style={{fontSize:30,fontWeight:900,color:c}}>{v}</div>
-            <div style={{fontSize:12,color:T.text2,marginTop:3}}>{l}</div>
-          </Card>
-        ))}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+        <h2 style={{fontSize:22,fontWeight:800}}>لوحة التحكم</h2>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={load} style={{background:T.card2,border:`1px solid ${T.border}`,borderRadius:10,width:36,height:36,display:"flex",alignItems:"center",justifyContent:"center",color:T.text2}}>
+            <RefreshCw size={15}/>
+          </button>
+          <button onClick={exportExcel} style={{background:`${T.gold}20`,border:`1px solid ${T.gold}40`,borderRadius:10,padding:"7px 12px",color:T.gold,fontSize:12,fontWeight:700,fontFamily:F,display:"flex",alignItems:"center",gap:5}}>
+            <Download size={13}/>تصدير
+          </button>
+        </div>
       </div>
-      <h3 style={{fontSize:15,fontWeight:700,marginBottom:12}}>آخر الطلبات</h3>
-      {cars.slice(0,8).map((c,i)=>(
-        <Card key={i} s={{padding:"12px 14px",marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:46,height:40,borderRadius:10,overflow:"hidden",flexShrink:0,background:T.card2}}>
-            {c.main_image_url?<img src={c.main_image_url} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<Car size={20} color={T.text3} style={{margin:"10px auto",display:"block"}}/>}
+
+      {loading?<div style={{display:"flex",justifyContent:"center",padding:"40px 0"}}><Sp s={36}/></div>:(
+        <>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+            {stats.map(([v,l,Icon,c],i)=>(
+              <Card key={i} s={{padding:"18px 16px",textAlign:"center"}}>
+                <Icon size={26} color={c} style={{margin:"0 auto 8px"}}/>
+                <div style={{fontSize:30,fontWeight:900,color:c}}>{v}</div>
+                <div style={{fontSize:12,color:T.text2,marginTop:3}}>{l}</div>
+              </Card>
+            ))}
           </div>
-          <div style={{flex:1,minWidth:0}}>
-            <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.car_name}</p>
-            <p style={{fontSize:11.5,color:T.gold}}>{c.order_number}</p>
-          </div>
-          <Badge color={T.gold}>{STEPS[c.current_status-1]?.ar}</Badge>
-        </Card>
-      ))}
+          <Card s={{padding:16,marginBottom:16}}>
+            <p style={{fontSize:13,fontWeight:700,marginBottom:14,display:"flex",alignItems:"center",gap:6}}>
+              <Activity size={14} color={T.gold}/>نسب المراحل
+            </p>
+            {[
+              ["المزاد والتجهيز",cars.filter(c=>c.current_status<=4).length,T.orange],
+              ["في الشحن",cars.filter(c=>c.current_status>=5&&c.current_status<=8).length,T.gold],
+              ["التخليص والتسليم",cars.filter(c=>c.current_status>=9).length,T.green],
+            ].map(([label,count,color])=>(
+              <div key={label} style={{marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+                  <span style={{fontSize:12,color:T.text2}}>{label}</span>
+                  <span style={{fontSize:12,fontWeight:700,color}}>{count}</span>
+                </div>
+                <div style={{height:4,background:T.card2,borderRadius:2,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${cars.length?Math.round(count/cars.length*100):0}%`,background:color,borderRadius:2,transition:"width 1s ease"}}/>
+                </div>
+              </div>
+            ))}
+          </Card>
+          <h3 style={{fontSize:15,fontWeight:700,marginBottom:12}}>آخر الطلبات</h3>
+          {cars.slice(0,8).map((c,i)=>(
+            <Card key={i} s={{padding:"12px 14px",marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:46,height:40,borderRadius:10,overflow:"hidden",flexShrink:0,background:T.card2}}>
+                {c.main_image_url?<img src={c.main_image_url} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<Car size={20} color={T.text3} style={{margin:"10px auto",display:"block"}}/>}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.car_name}</p>
+                <p style={{fontSize:11.5,color:T.gold}}>{c.order_number}</p>
+              </div>
+              <Badge color={T.gold}>{STEPS[c.current_status-1]?.ar}</Badge>
+            </Card>
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -1382,84 +1489,170 @@ function AdminEditCar({car,onBack,setToast}) {
 
 function AdminActions({car,setToast}) {
   const [upl,setUpl]=useState(false);
+  const [progress,setProgress]=useState("");
   const [stage,setStage]=useState("auction");
   const [docName,setDocName]=useState("");
+  const [docType,setDocType]=useState("other");
   const [notifT,setNotifT]=useState("");
   const [notifM,setNotifM]=useState("");
   const [lat,setLat]=useState(car.shipments?.[0]?.current_lat?.toString()||"");
   const [lng,setLng]=useState(car.shipments?.[0]?.current_lng?.toString()||"");
   const [note,setNote]=useState("");
 
-  const upload=async(bucket,file,table,extra)=>{
-    setUpl(true);
-    const path=`${car.id}/${Date.now()}_${file.name}`;
-    const{error}=await supabase.storage.from(bucket).upload(path,file);
-    if(error){setToast({msg:"خطأ: "+error.message,type:"error"});setUpl(false);return;}
+  const uploadFile=async(bucket,file,table,extra)=>{
+    const path=`${car.id}/${Date.now()}_${file.name.replace(/\s/g,"_")}`;
+    const{error}=await supabase.storage.from(bucket).upload(path,file,{cacheControl:"3600",upsert:false});
+    if(error) throw error;
     const{data:{publicUrl}}=supabase.storage.from(bucket).getPublicUrl(path);
     await supabase.from(table).insert({car_id:car.id,url:publicUrl,...extra});
-    setToast({msg:"تم الرفع ✓",type:"success"});setUpl(false);
+    return publicUrl;
   };
+
+  const uploadImages=async(e)=>{
+    const files=Array.from(e.target.files||[]);
+    if(!files.length) return;
+    setUpl(true);let ok=0;
+    for(let i=0;i<files.length;i++){
+      try{
+        setProgress(`رفع ${i+1}/${files.length}: ${files[i].name}`);
+        await uploadFile("car-images",files[i],"car_images",{stage,stage_ar:stage});
+        ok++;
+      }catch(err){console.error(err);}
+    }
+    setUpl(false);setProgress("");
+    setToast({msg:`تم رفع ${ok} من ${files.length} صورة ✓`,type:"success"});
+    e.target.value="";
+  };
+
+  const uploadVideo=async(e)=>{
+    const file=e.target.files?.[0];
+    if(!file) return;
+    if(file.size>150*1024*1024) return setToast({msg:"حجم الفيديو يتجاوز 150 ميجا",type:"error"});
+    setUpl(true);setProgress(`رفع فيديو: ${file.name}`);
+    try{
+      await uploadFile("car-videos",file,"car_videos",{stage,title:file.name});
+      setToast({msg:"تم رفع الفيديو ✓",type:"success"});
+    }catch(err){setToast({msg:"خطأ: "+err.message,type:"error"});}
+    setUpl(false);setProgress("");e.target.value="";
+  };
+
+  const uploadDoc=async(e)=>{
+    const file=e.target.files?.[0];
+    if(!file||!docName) return;
+    setUpl(true);setProgress(`رفع: ${file.name}`);
+    try{
+      await uploadFile("documents",file,"documents",{name:file.name,name_ar:docName,doc_type:docType,file_size:`${Math.round(file.size/1024)} KB`});
+      setToast({msg:"تم رفع المستند ✓",type:"success"});
+    }catch(err){setToast({msg:"خطأ: "+err.message,type:"error"});}
+    setUpl(false);setProgress("");setDocName("");e.target.value="";
+  };
+
   const saveLoc=async()=>{
     if(!lat||!lng) return;
     const ex=car.shipments?.[0];
     if(ex) await supabase.from("shipments").update({current_lat:parseFloat(lat),current_lng:parseFloat(lng)}).eq("id",ex.id);
     else await supabase.from("shipments").insert({car_id:car.id,current_lat:parseFloat(lat),current_lng:parseFloat(lng)});
-    setToast({msg:"تم ✓",type:"success"});
+    setToast({msg:"تم تحديث الموقع ✓",type:"success"});
   };
+
   const saveNote=async()=>{
     if(!note) return;
     await supabase.from("tracking_steps").update({notes:note}).eq("car_id",car.id).eq("step_number",car.current_status);
-    setToast({msg:"تم ✓",type:"success"});setNote("");
+    setToast({msg:"تم حفظ الملاحظة ✓",type:"success"});setNote("");
   };
+
   const sendNotif=async()=>{
     if(!notifT||!notifM) return setToast({msg:"أدخل العنوان والنص",type:"error"});
-    await supabase.from("notifications").insert({client_id:car.client_id,car_id:car.id,title:notifT,message:notifM,type:"update"});
-    setToast({msg:"تم الإرسال ✓",type:"success"});setNotifT("");setNotifM("");
+    await supabase.from("notifications").insert({client_id:car.client_id,car_id:car.id,title:notifT,message:notifM,type:"update",read:false,created_at:new Date().toISOString()});
+    setToast({msg:"تم إرسال الإشعار ✓",type:"success"});setNotifT("");setNotifM("");
   };
 
+  const Sec=({label,icon:Icon,children})=>(
+    <div style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginTop:14}}>
+      <p style={{fontSize:12.5,color:T.gold,fontWeight:700,marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+        <Icon size={13}/>{label}
+      </p>
+      {children}
+    </div>
+  );
+
   return (
-    <div style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginTop:12}}>
-      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><MapPin size={13}/>تحديث الموقع</p>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-        <Field value={lat} onChange={setLat} placeholder="Lat" ltr/>
-        <Field value={lng} onChange={setLng} placeholder="Lng" ltr/>
-      </div>
-      <Btn v="outline" sz="sm" onClick={saveLoc} s={{marginBottom:14}}>حفظ الموقع</Btn>
-
-      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><FileText size={13}/>ملاحظة</p>
-      <Field value={note} onChange={setNote} placeholder="ملاحظة..."/>
-      <Btn v="outline" sz="sm" onClick={saveNote} s={{marginBottom:14}}>حفظ</Btn>
-
-      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><ImgIcon size={13}/>رفع صورة</p>
-      <SF value={stage} onChange={setStage} options={[["auction","المزاد"],["post_purchase","بعد الشراء"],["transit","النقل"],["port","الميناء"],["loading","التحميل"],["arrival","الوصول"]]}/>
-      <input type="file" accept="image/*" disabled={upl} onChange={e=>{const f=e.target.files?.[0];if(f)upload("car-images",f,"car_images",{stage});}} style={{color:T.text,fontSize:13,display:"block",marginBottom:14}}/>
-
-      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><Video size={13}/>رفع فيديو</p>
-      <input type="file" accept="video/*" disabled={upl} onChange={e=>{const f=e.target.files?.[0];if(f)upload("car-videos",f,"car_videos",{stage});}} style={{color:T.text,fontSize:13,display:"block",marginBottom:14}}/>
-
-      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><FileText size={13}/>رفع مستند</p>
-      <Field value={docName} onChange={setDocName} placeholder="اسم المستند"/>
-      <input type="file" accept=".pdf,.doc,.docx" disabled={upl||!docName} onChange={e=>{const f=e.target.files?.[0];if(f&&docName)upload("documents",f,"documents",{name:f.name,name_ar:docName,doc_type:"other",file_size:`${Math.round(f.size/1024)} KB`});}} style={{color:T.text,fontSize:13,display:"block",marginBottom:14}}/>
-
-      <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><Bell size={13}/>إرسال إشعار</p>
-      <Field value={notifT} onChange={setNotifT} placeholder="العنوان"/>
-      <Field value={notifM} onChange={setNotifM} placeholder="النص..."/>
-      <Btn v="green" sz="sm" onClick={sendNotif} icon={<Send size={14}/>}>إرسال</Btn>
-      {upl&&<p style={{color:T.gold,fontSize:12,marginTop:10,animation:"pulse 1s infinite"}}>جارٍ الرفع...</p>}
+    <div style={{marginTop:12}}>
+      {upl&&(
+        <div style={{background:T.card2,borderRadius:10,padding:"10px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:8,fontSize:12.5,color:T.gold}} className="pulse">
+          <Sp s={14}/>{progress||"جارٍ الرفع..."}
+        </div>
+      )}
+      <Sec label="تحديث الموقع GPS" icon={MapPin}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+          <Field value={lat} onChange={setLat} placeholder="Lat 29.7" ltr/>
+          <Field value={lng} onChange={setLng} placeholder="Lng -95.3" ltr/>
+        </div>
+        <Btn v="outline" sz="sm" onClick={saveLoc}>حفظ الموقع</Btn>
+      </Sec>
+      <Sec label="ملاحظة على المرحلة الحالية" icon={FileText}>
+        <Field value={note} onChange={setNote} placeholder="ملاحظة..."/>
+        <Btn v="outline" sz="sm" onClick={saveNote}>حفظ</Btn>
+      </Sec>
+      <Sec label="رفع صور متعددة" icon={ImgIcon}>
+        <SF value={stage} onChange={setStage} options={[["auction","المزاد"],["post_purchase","بعد الشراء"],["transit","النقل"],["port","الميناء"],["loading","التحميل"],["arrival","الوصول"]]}/>
+        <p style={{fontSize:11.5,color:T.text3,marginBottom:8}}>يمكنك اختيار أكثر من صورة دفعة واحدة</p>
+        <label style={{display:"flex",alignItems:"center",gap:8,background:T.card2,border:`1.5px dashed ${T.gold}50`,borderRadius:12,padding:"12px 16px",cursor:"pointer",color:T.gold,fontSize:13,fontWeight:600}}>
+          <ImgIcon size={16}/> اختر الصور (متعددة)
+          <input type="file" accept="image/*" multiple disabled={upl} onChange={uploadImages} style={{display:"none"}}/>
+        </label>
+      </Sec>
+      <Sec label="رفع فيديو (حد أقصى 150 ميجا)" icon={VideoIcon}>
+        <label style={{display:"flex",alignItems:"center",gap:8,background:T.card2,border:`1.5px dashed ${T.gold}50`,borderRadius:12,padding:"12px 16px",cursor:"pointer",color:T.gold,fontSize:13,fontWeight:600}}>
+          <VideoIcon size={16}/> اختر فيديو
+          <input type="file" accept="video/*" disabled={upl} onChange={uploadVideo} style={{display:"none"}}/>
+        </label>
+      </Sec>
+      <Sec label="رفع مستند" icon={FileText}>
+        <Field value={docName} onChange={setDocName} placeholder="اسم المستند بالعربي"/>
+        <SF value={docType} onChange={setDocType} options={[["invoice","فاتورة الشراء"],["bill_of_lading","بوليصة الشحن"],["inspection","تقرير الفحص"],["clearance","التخليص الجمركي"],["other","أخرى"]]}/>
+        <label style={{display:"flex",alignItems:"center",gap:8,background:docName?T.card2:T.bg3,border:`1.5px dashed ${docName?T.gold+"50":T.border}`,borderRadius:12,padding:"12px 16px",cursor:docName?"pointer":"not-allowed",color:docName?T.gold:T.text3,fontSize:13,fontWeight:600,opacity:docName?1:0.5}}>
+          <FileText size={16}/> {docName?"اختر الملف":"أدخل الاسم أولاً"}
+          <input type="file" accept=".pdf,.doc,.docx" disabled={upl||!docName} onChange={uploadDoc} style={{display:"none"}}/>
+        </label>
+      </Sec>
+      <Sec label="إرسال إشعار للعميل" icon={Bell}>
+        <Field value={notifT} onChange={setNotifT} placeholder="العنوان"/>
+        <Field value={notifM} onChange={setNotifM} placeholder="النص..."/>
+        <Btn v="green" sz="sm" onClick={sendNotif} icon={<Send size={14}/>}>إرسال</Btn>
+      </Sec>
     </div>
   );
 }
 
-function AdminClients() {
+function AdminClients({setToast}) {
   const [clients,setClients]=useState([]);
   const [sel,setSel]=useState(null);
   const [notifT,setNotifT]=useState("");
   const [notifM,setNotifM]=useState("");
-  const [toast,setToast]=useState({});
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
 
-  useEffect(()=>{
-    supabase.from("nukhba_users").select("*,cars(id,car_name,current_status)").eq("role","client").order("created_at",{ascending:false}).then(({data})=>data&&setClients(data));
+  const load=useCallback(async()=>{
+    setLoading(true);
+    // جلب العملاء
+    const{data:usersData,error}=await supabase
+      .from("nukhba_users")
+      .select("id,full_name,email,created_at")
+      .eq("role","client")
+      .order("created_at",{ascending:false});
+    if(error){ console.error("clients error:",error); setLoading(false); return; }
+    if(!usersData){ setLoading(false); return; }
+    // جلب عدد السيارات لكل عميل منفصلاً
+    const withCars = await Promise.all(usersData.map(async(u)=>{
+      const{count}=await supabase.from("cars").select("id",{count:"exact",head:true}).eq("client_id",u.id);
+      return{...u, carCount: count||0};
+    }));
+    setClients(withCars);
+    setLoading(false);
   },[]);
+
+  useEffect(()=>{load();},[load]);
 
   const sendNotif=async(clientId,clientName)=>{
     if(!notifT||!notifM) return setToast({msg:"أدخل العنوان والنص",type:"error"});
@@ -1470,6 +1663,7 @@ function AdminClients() {
 
   const broadcast=async()=>{
     if(!notifT||!notifM) return setToast({msg:"أدخل العنوان والنص",type:"error"});
+    if(!window.confirm(`إرسال إشعار لكل العملاء (${clients.length})?`)) return;
     for(const c of clients){
       await supabase.from("notifications").insert({client_id:c.id,title:notifT,message:notifM,type:"info",read:false,created_at:new Date().toISOString()});
     }
@@ -1477,11 +1671,25 @@ function AdminClients() {
     setNotifT("");setNotifM("");
   };
 
+  const filtered=clients.filter(c=>!search||c.full_name?.toLowerCase().includes(search.toLowerCase())||c.email?.toLowerCase().includes(search.toLowerCase()));
+
   return (
     <div style={{padding:"20px 16px"}} className="fu">
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
         <h2 style={{fontSize:22,fontWeight:800}}>العملاء</h2>
-        <Badge color={T.gold}>{clients.length} عميل</Badge>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <Badge color={T.gold}>{clients.length} عميل</Badge>
+          <button onClick={load} style={{background:T.card2,border:`1px solid ${T.border}`,borderRadius:10,width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",color:T.text2}}>
+            <RefreshCw size={13}/>
+          </button>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div style={{position:"relative",marginBottom:14}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="بحث بالاسم أو البريد..."
+          style={{width:"100%",background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"11px 16px 11px 40px",color:T.text,fontSize:14,fontFamily:F}}/>
+        <Search size={16} color={T.text3} style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)"}}/>
       </div>
 
       {/* Broadcast */}
@@ -1491,29 +1699,33 @@ function AdminClients() {
         </p>
         <Field value={notifT} onChange={setNotifT} placeholder="العنوان"/>
         <Field value={notifM} onChange={setNotifM} placeholder="النص..."/>
-        <Btn v="green" sz="sm" onClick={broadcast} full icon={<Send size={14}/>}>إرسال للكل</Btn>
+        <Btn v="green" sz="sm" onClick={broadcast} full icon={<Send size={14}/>}>إرسال للكل ({clients.length})</Btn>
       </Card>
 
-      {clients.map((c,i)=>(
+      {loading?(
+        <div style={{display:"flex",justifyContent:"center",padding:"40px 0"}}><Sp s={36}/></div>
+      ):filtered.length===0?(
+        <Empty icon={Users} msg="لا يوجد عملاء" sub="سيظهرون هنا عند تسجيلهم"/>
+      ):filtered.map((c,i)=>(
         <Card key={i} s={{padding:"14px 16px",marginBottom:10}}>
-          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:sel===c.id?12:0}}>
-            <div style={{width:42,height:42,borderRadius:"50%",background:`linear-gradient(135deg,${T.goldD},${T.gold})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:"#1B2B2C",flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:"50%",background:`linear-gradient(135deg,${T.goldD},${T.gold})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"#1B2B2C",flexShrink:0}}>
               {(c.full_name||"؟")[0]}
             </div>
-            <div style={{flex:1}}>
-              <p style={{fontWeight:700,fontSize:14.5}}>{c.full_name}</p>
-              <p style={{fontSize:12,color:T.text2}}>{c.email}</p>
+            <div style={{flex:1,minWidth:0}}>
+              <p style={{fontWeight:700,fontSize:14.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.full_name}</p>
+              <p style={{fontSize:12,color:T.text2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email}</p>
             </div>
-            <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <Badge color={T.gold}>{c.cars?.length||0} سيارة</Badge>
-              <button onClick={()=>setSel(sel===c.id?null:c.id)} style={{background:T.card2,border:"none",color:T.text2,borderRadius:9,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+              <Badge color={T.gold}>{c.carCount} سيارة</Badge>
+              <button onClick={()=>setSel(sel===c.id?null:c.id)} style={{background:`${T.gold}20`,border:"none",color:T.gold,borderRadius:9,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center"}}>
                 <Bell size={13}/>
               </button>
             </div>
           </div>
           {sel===c.id&&(
-            <div style={{borderTop:`1px solid ${T.border}`,paddingTop:12}}>
-              <p style={{fontSize:12,color:T.gold,fontWeight:700,marginBottom:8}}>إرسال إشعار خاص</p>
+            <div style={{borderTop:`1px solid ${T.border}`,paddingTop:12,marginTop:12}}>
+              <p style={{fontSize:12.5,color:T.gold,fontWeight:700,marginBottom:10}}>إرسال إشعار خاص</p>
               <Field value={notifT} onChange={setNotifT} placeholder="العنوان"/>
               <Field value={notifM} onChange={setNotifM} placeholder="النص..."/>
               <Btn v="green" sz="sm" onClick={()=>sendNotif(c.id,c.full_name)} icon={<Send size={13}/>}>إرسال</Btn>
@@ -1521,7 +1733,6 @@ function AdminClients() {
           )}
         </Card>
       ))}
-      <Toast msg={toast.msg} type={toast.type} onClose={()=>setToast({})}/>
     </div>
   );
 }
