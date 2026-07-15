@@ -1367,8 +1367,16 @@ function AdminOrders({setToast}) {
   const [sel,setSel]=useState(null);
   const [editCar,setEditCar]=useState(null);
   const [search,setSearch]=useState("");
-  useEffect(()=>{load();},[]);
-  const load=()=>supabase.from("cars").select("*,shipments(*)").order("created_at",{ascending:false}).then(({data})=>data&&setCars(data));
+  const [loading,setLoading]=useState(true);
+
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const{data}=await supabase.from("cars").select("*,shipments(*)").order("created_at",{ascending:false});
+    if(data) setCars(data);
+    setLoading(false);
+  },[]);
+
+  useEffect(()=>{load();},[load]);
   const upStatus=async(id,status,carName,clientId)=>{
     await supabase.from("cars").update({current_status:status}).eq("id",id);
     await supabase.from("tracking_steps").update({completed:true,completed_at:new Date().toISOString()}).eq("car_id",id).eq("step_number",status);
@@ -1400,7 +1408,9 @@ function AdminOrders({setToast}) {
           style={{width:"100%",background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"11px 16px 11px 40px",color:T.text,fontSize:14,fontFamily:F}}/>
         <Search size={16} color={T.text3} style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)"}}/>
       </div>
-      {filtered.map((c,i)=>(
+      {loading?<div style={{display:"flex",justifyContent:"center",padding:"40px 0"}}><Sp s={36}/></div>:
+      filtered.length===0?<Empty icon={Car} msg="لا توجد طلبات"/>:
+      filtered.map((c,i)=>(
         <Card key={i} s={{padding:"14px 16px",marginBottom:12}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
             <div style={{width:46,height:40,borderRadius:10,overflow:"hidden",flexShrink:0,background:T.card2}}>
@@ -1450,7 +1460,25 @@ function AdminEditCar({car,onBack,setToast}) {
     main_image_url:car.main_image_url||"",
   });
   const [busy,setBusy]=useState(false);
+  const [uplImg,setUplImg]=useState(false);
   const sf=(k,v)=>setF(p=>({...p,[k]:v}));
+
+  const uploadMainImage=async(e)=>{
+    const file=e.target.files?.[0];
+    if(!file) return;
+    setUplImg(true);
+    try{
+      const path=`${car.id}/main_${Date.now()}_${file.name.replace(/\s/g,"_")}`;
+      const{error}=await supabase.storage.from("car-images").upload(path,file,{cacheControl:"3600",upsert:true});
+      if(error) throw error;
+      const{data:{publicUrl}}=supabase.storage.from("car-images").getPublicUrl(path);
+      sf("main_image_url",publicUrl);
+      setToast({msg:"تم رفع الصورة ✓",type:"success"});
+    }catch(err){setToast({msg:"خطأ في الرفع: "+err.message,type:"error"});}
+    setUplImg(false);
+    e.target.value="";
+  };
+
   const save=async()=>{
     setBusy(true);
     const{error}=await supabase.from("cars").update({...f,year:parseInt(f.year)||null}).eq("id",car.id);
@@ -1458,29 +1486,51 @@ function AdminEditCar({car,onBack,setToast}) {
     else { setToast({msg:"تم حفظ التعديلات ✓",type:"success"}); onBack(); }
     setBusy(false);
   };
+
   return (
-    <div style={{padding:"20px 16px"}} className="fu">
+    <div style={{padding:"20px 16px",minHeight:"100vh"}} className="fu">
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
         <button onClick={onBack} style={{background:T.card2,border:"none",color:T.text2,borderRadius:12,width:36,height:36,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <ChevronRight size={18}/>
         </button>
         <h2 style={{fontSize:20,fontWeight:800}}>تعديل السيارة</h2>
       </div>
-      <Field label="اسم السيارة" value={f.car_name} onChange={v=>sf("car_name",v)} placeholder="Toyota Land Cruiser"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        <Field label="الموديل" value={f.model} onChange={v=>sf("model",v)} placeholder="LC300"/>
-        <Field label="السنة" value={f.year} onChange={v=>sf("year",v)} placeholder="2022"/>
-        <Field label="اللون" value={f.color} onChange={v=>sf("color",v)} placeholder="أبيض"/>
-        <Field label="VIN" value={f.vin} onChange={v=>sf("vin",v)} placeholder="JTMCY7..." ltr/>
-        <Field label="المحرك" value={f.engine} onChange={v=>sf("engine",v)} placeholder="3.5L"/>
-        <Field label="الدفع" value={f.drive_type} onChange={v=>sf("drive_type",v)} placeholder="4WD"/>
-        <Field label="ناقل الحركة" value={f.transmission} onChange={v=>sf("transmission",v)} placeholder="أوتوماتيك"/>
-        <Field label="المسافة" value={f.mileage} onChange={v=>sf("mileage",v)} placeholder="12,000"/>
-      </div>
-      <Field label="رابط الصورة الرئيسية" value={f.main_image_url} onChange={v=>sf("main_image_url",v)} placeholder="https://..." ltr/>
-      <Field label="تاريخ الشراء" value={f.purchase_date} onChange={v=>sf("purchase_date",v)} type="date" ltr/>
-      <Field label="الوصول المتوقع" value={f.estimated_arrival} onChange={v=>sf("estimated_arrival",v)} type="date" ltr/>
-      <Btn onClick={save} disabled={busy} full sz="lg" icon={<Check size={18}/>} s={{marginTop:8}}>
+
+      {/* الصورة الرئيسية */}
+      <Card s={{padding:16,marginBottom:14}}>
+        <p style={{fontSize:13,fontWeight:700,color:T.gold,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+          <ImgIcon size={14}/>الصورة الرئيسية
+        </p>
+        {f.main_image_url&&(
+          <img src={f.main_image_url} style={{width:"100%",height:160,objectFit:"cover",borderRadius:12,marginBottom:12,border:`1px solid ${T.border}`}}/>
+        )}
+        <label style={{display:"flex",alignItems:"center",gap:8,background:T.card2,border:`1.5px dashed ${T.gold}50`,borderRadius:12,padding:"12px 16px",cursor:"pointer",color:uplImg?T.text3:T.gold,fontSize:13,fontWeight:600}}>
+          <ImgIcon size={16}/> {uplImg?"جارٍ الرفع...":"رفع صورة رئيسية جديدة"}
+          <input type="file" accept="image/*" disabled={uplImg} onChange={uploadMainImage} style={{display:"none"}}/>
+        </label>
+      </Card>
+
+      {/* بيانات السيارة */}
+      <Card s={{padding:16,marginBottom:14}}>
+        <p style={{fontSize:13,fontWeight:700,color:T.gold,marginBottom:12}}>بيانات السيارة</p>
+        <Field label="اسم السيارة" value={f.car_name} onChange={v=>sf("car_name",v)} placeholder="Toyota Land Cruiser"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="الموديل" value={f.model} onChange={v=>sf("model",v)} placeholder="LC300"/>
+          <Field label="السنة" value={f.year} onChange={v=>sf("year",v)} placeholder="2022"/>
+          <Field label="اللون" value={f.color} onChange={v=>sf("color",v)} placeholder="أبيض"/>
+          <Field label="VIN" value={f.vin} onChange={v=>sf("vin",v)} placeholder="JTMCY7..." ltr/>
+          <Field label="المحرك" value={f.engine} onChange={v=>sf("engine",v)} placeholder="3.5L"/>
+          <Field label="الدفع" value={f.drive_type} onChange={v=>sf("drive_type",v)} placeholder="4WD"/>
+          <Field label="ناقل الحركة" value={f.transmission} onChange={v=>sf("transmission",v)} placeholder="أوتوماتيك"/>
+          <Field label="المسافة" value={f.mileage} onChange={v=>sf("mileage",v)} placeholder="12,000"/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="تاريخ الشراء" value={f.purchase_date} onChange={v=>sf("purchase_date",v)} type="date" ltr/>
+          <Field label="الوصول المتوقع" value={f.estimated_arrival} onChange={v=>sf("estimated_arrival",v)} type="date" ltr/>
+        </div>
+      </Card>
+
+      <Btn onClick={save} disabled={busy} full sz="lg" icon={<Check size={18}/>}>
         {busy?<Sp s={18} c="#1B2B2C"/>:"حفظ التعديلات"}
       </Btn>
     </div>
