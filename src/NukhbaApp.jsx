@@ -5,7 +5,7 @@ import {
   Check, X, Search, Download, MessageCircle, Ship, Send,
   ChevronRight, ChevronLeft, Lock, Mail, Loader2, Upload,
   BarChart3, Users, MoreVertical, Shield, Image as ImgIcon,
-  Star, Heart, Share2, Camera, Video, Filter, Clock,
+  Star, Heart, Share2, Camera, Video as VideoIcon, Filter, Clock,
   CheckCircle2, AlertCircle, MapPin, Package, Anchor,
   Edit3, Trash2, RefreshCw, Eye, ZoomIn, QrCode,
   Phone, Globe, Info, PlusCircle, Maximize2, ArrowLeft,
@@ -1921,3 +1921,4 @@ export default function EliteApp() {
   if(auth.user.role==="admin"||auth.user.role==="employee") return <AdminApp auth={auth}/>;
   return <ClientApp auth={auth}/>;
 }
+
